@@ -1,15 +1,14 @@
 # Digital-3D-World-Creator — Real-Time Video to 3D Reconstruction
-Using your phone camera to capture the reality then the 3D representation will be created in the digital world in real time. 
+
+Using your phone camera to capture the reality, then the 3D representation is created in the digital world.
 
 > Point your phone at a room. Walk around it. Watch it become a 3D model.
-
-![Pipeline](docs/pipeline.png)
 
 ---
 
 ## What it does
 
-SCENE.3D takes a short phone video (or live camera stream) of an indoor space and reconstructs a geometrically coherent, semantically labelled 3D point cloud. It runs entirely on your own machine — no cloud, no GPU required.
+Digital-3D-World-Creator takes a short phone video (or live camera stream) of an indoor space and reconstructs a geometrically coherent, semantically labelled 3D point cloud. It runs entirely on your own machine — no cloud, no GPU required.
 
 **Pipeline at a glance:**
 
@@ -25,8 +24,8 @@ Phone camera  →  Frame extraction  →  Feature matching  →  3D triangulatio
 
 | Feature | Description |
 |---|---|
-| 📱 Live camera capture | Streams frames directly from phone browser via WebRTC |
-| 🎬 Video file upload | Drop a `.mp4` / `.mov` / `.heic` video instead |
+| 📱 Live camera capture | Streams frames directly from phone browser |
+| 🎬 Video file upload | Drop a `.mp4` / `.mov` video instead |
 | ⚡ Dual SfM engine | Uses COLMAP (if installed) or built-in ORB-based triangulation |
 | 🧊 Dense point cloud | Statistical outlier removal + voxel downsampling |
 | 🏠 Semantic labels | Floor / wall / ceiling / furniture via normal + height analysis |
@@ -35,21 +34,27 @@ Phone camera  →  Frame extraction  →  Feature matching  →  3D triangulatio
 | 🔌 Offline demo | Works without backend to show example scene |
 
 ---
-## folder structure
+
+## Folder structure
+
+```
 Digital-3D-World-Creator/
 ├── backend/
-│   ├── main.py          
+│   ├── main.py
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
-│   └── index.html       
+│   └── index.html
 ├── start.ps1            ← Windows start script
 ├── start.sh             ← Mac/Linux start script
 └── docker-compose.yml
+```
+
+---
 
 ## Requirements
 
-- **Python 3.10+**
+- **Python 3.10–3.11** (Python 3.12+ not supported due to Open3D)
 - **COLMAP** *(optional but recommended for higher quality)*
 
 ### Python packages
@@ -81,38 +86,55 @@ cd Digital-3D-World-Creator
 docker compose up --build
 ```
 
-### Option D — Manual
-```bash
+### Option D — Manual (recommended for first-time setup)
+```powershell
+# Create and activate virtual environment (Python 3.11 required)
+py -3.11 -m venv venv
+venv\Scripts\activate
+
 # Terminal 1 — backend
 cd backend
 pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
 
-# Terminal 2 — frontend
+# Terminal 2 — frontend (open a new PowerShell window)
+cd Digital-3D-World-Creator
 python -m http.server 3000 --directory frontend
 ```
 
-Then open **http://localhost:3000** on your laptop, or  
-**http://YOUR_LOCAL_IP:3000** on your phone (same WiFi network).
+Then open **http://localhost:3000** in your browser.
 
 ---
 
 ## Using on your phone
 
-1. Connect your phone to the **same WiFi** as your laptop
-2. Find your laptop's IP: `ipconfig` (Windows) or `hostname -I` (Linux/Mac)
-3. Open `http://LAPTOP_IP:3000` in your phone's browser
-4. Tap the shutter button and **slowly pan around the room**
-5. Walk a full orbit around the space, covering all angles
-6. Tap stop → **Reconstruct 3D Scene**
-7. Switch to the **3D Viewer** tab
+The easiest and most reliable method is to **record a video and upload it**:
+
+1. Record a slow 30–60 second video on your phone panning around the room
+2. Send it to your laptop (WhatsApp, Google Drive, email, USB)
+3. Open `http://localhost:3000` on your laptop
+4. Click the **upload area** at the bottom and select your video
+5. Click **Reconstruct 3D Scene**
+6. Switch to the **3D Viewer** tab
+
+### Live camera from phone (advanced)
+If you want to use your phone as a live camera:
+
+1. Make sure your phone and laptop are on the **same WiFi** (note: university/managed networks may block this — use your phone's hotspot instead)
+2. Find your laptop's IP: run `ipconfig` and look for the IPv4 address under Wi-Fi
+3. Open `http://LAPTOP_IP:3000` on your phone
+4. If camera access is blocked (Chrome requires https for camera), use [ngrok](https://ngrok.com) to create a secure tunnel:
+   ```powershell
+   ngrok http 3000
+   ```
+   Then open the `https://` URL ngrok provides on your phone
 
 ### Tips for best results
 - Move **slowly and steadily** — fast motion = blurry frames = fewer matches
-- Ensure **good lighting** — depth from monocular video needs texture
+- Ensure **good lighting** — reconstruction needs visible texture
 - Aim for **30–120 frames** (15–60 seconds of slow panning)
 - Overlap adjacent views by ~60% for robust feature matching
-- Avoid **featureless surfaces** (blank white walls) — add some objects
+- Avoid **featureless surfaces** (plain white walls) — add some objects for texture
 
 ---
 
@@ -125,31 +147,31 @@ Then open **http://localhost:3000** on your laptop, or
 - Sequential matcher (ideal for video, exploits temporal ordering)
 - Bundle adjustment to minimise reprojection error
 
-**Built-in ORB triangulation** (fallback) requires zero external deps:
+**Built-in ORB triangulation** (fallback, no install needed):
 - ORB feature matching between consecutive frame pairs
 - Essential matrix estimation via RANSAC
 - Pose recovery + linear triangulation
-- Less accurate but fully self-contained
+- Less accurate but fully self-contained — works out of the box
 
 The system auto-detects COLMAP and falls back gracefully.
 
 ### Why Open3D for post-processing?
 Open3D provides battle-tested implementations of:
-- Statistical outlier removal (protects against sky, specularities)
+- Statistical outlier removal (protects against noisy points)
 - Voxel downsampling (keeps viewer responsive)
 - Poisson surface reconstruction (optional mesh from normals)
 - Normal estimation + consistent orientation
 
 ### Why height-based semantics?
-Depth-only videos don't carry enough texture to run SAM/Mask2Former in real time. The lightweight normal + height heuristic correctly classifies floor/ceiling/wall/furniture in ~95% of indoor scenes without requiring a GPU or large model download. It's also fully geometric — labels align with the point cloud by construction, satisfying the *coherence* requirement.
+Monocular video doesn't carry enough information to run SAM/Mask2Former in real time without a GPU. The lightweight normal + height heuristic correctly classifies floor/ceiling/wall/furniture in most indoor scenes without requiring any model download. Labels align with the point cloud by construction, satisfying geometric coherence.
 
-For richer semantics, the architecture is designed to swap in SAM2 + point projection with a single model swap.
+For richer semantics, the architecture is designed to swap in SAM2 + point projection with a single function replacement.
 
-### Real-time streaming
-The frontend captures JPEG frames via `canvas.toBlob()` at 2 fps and POSTs them to the FastAPI backend. A WebSocket connection streams progress events back, driving the progress bar and auto-switching to the viewer on completion.
-
-### Three.js viewer
-Custom orbit controls (no OrbitControls import) handle both mouse and multi-touch (pinch to zoom). The point cloud uses `BufferGeometry` for GPU-efficient rendering of up to ~500 k points at 60 fps on mobile.
+### Frontend API connection
+The frontend automatically connects to the backend using `window.location.hostname`, so it works on any machine without configuration changes:
+```javascript
+const API = `http://${window.location.hostname}:8000`;
+```
 
 ---
 
@@ -184,9 +206,21 @@ Poisson mesh: 8,442 triangles
 | What | Where |
 |---|---|
 | Swap in SAM2 semantics | `assign_semantic_labels()` in `backend/main.py` |
-| Add depth estimation (MiDaS) | After `dense_reconstruction_fallback()` |
+| Add depth estimation (MiDaS) | After `dense_reconstruction_fallback()` in `backend/main.py` |
 | WebRTC for lower latency | Replace fetch-frame loop in `frontend/index.html` |
 | NeRF export | Add `export_nerf_transforms()` using COLMAP camera poses |
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `open3d` install fails | Use Python 3.11 — `py -3.11 -m venv venv` |
+| Backend offline in browser | Run uvicorn from inside the `backend/` folder |
+| Phone can't reach laptop | Use phone hotspot instead of university WiFi |
+| Camera blocked on phone | Use video upload instead, or use ngrok for https |
+| `.\start.ps1` not recognised | Run PowerShell from the project root folder |
 
 ---
 

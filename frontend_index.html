@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SCENE — Video to 3D</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  /* ── Reset & Base ─────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #08090c;
+    --surface:   #111318;
+    --surface2:  #1a1d25;
+    --border:    #2a2d38;
+    --accent:    #00e5ff;
+    --accent2:   #7c4dff;
+    --success:   #00e676;
+    --warn:      #ff9100;
+    --danger:    #ff1744;
+    --text:      #e8eaf0;
+    --muted:     #5c6070;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --font:      'DM Sans', system-ui, sans-serif;
+    --radius:    12px;
+    --glow:      0 0 24px rgba(0,229,255,0.18);
+  }
+
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  html, body {
+    height: 100%; overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Layout ────────────────────────────────────────────────── */
+  #app {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Top bar ───────────────────────────────────────────────── */
+  #topbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    text-shadow: var(--glow);
+  }
+
+  .logo span { color: var(--muted); }
+
+  #session-badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 8px;
+  }
+
+  /* ── Tab bar ───────────────────────────────────────────────── */
+  #tabs {
+    flex: 0 0 auto;
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* ── Panels ────────────────────────────────────────────────── */
+  .panel {
+    flex: 1;
+    overflow: hidden;
+    display: none;
+    position: relative;
+  }
+
+  .panel.active { display: flex; flex-direction: column; }
+
+  /* ── CAPTURE panel ─────────────────────────────────────────── */
+  #capture-panel {
+    background: var(--bg);
+  }
+
+  #video-wrapper {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+    background: #000;
+  }
+
+  #camera-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  #capture-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  /* Corner brackets */
+  .corner {
+    position: absolute;
+    width: 28px;
+    height: 28px;
+    border-color: var(--accent);
+    border-style: solid;
+    opacity: 0.7;
+  }
+  .corner.tl { top: 16px; left: 16px; border-width: 2px 0 0 2px; }
+  .corner.tr { top: 16px; right: 16px; border-width: 2px 2px 0 0; }
+  .corner.bl { bottom: 16px; left: 16px; border-width: 0 0 2px 2px; }
+  .corner.br { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; }
+
+  #frame-counter {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    background: rgba(8,9,12,0.75);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 10px;
+    backdrop-filter: blur(8px);
+  }
+
+  #rec-indicator {
+    position: absolute;
+    top: 16px;
+    right: 52px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--danger);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  #rec-indicator.active { opacity: 1; }
+
+  .rec-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--danger);
+    animation: blink 1s infinite;
+  }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  /* Guide overlay during capture */
+  #motion-hint {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    color: rgba(255,255,255,0.7);
+    font-size: 12px;
+    pointer-events: none;
+    transition: opacity 0.5s;
+  }
+
+  /* Capture controls */
+  #capture-controls {
+    flex: 0 0 auto;
+    padding: 16px 20px 24px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+  }
+
+  #capture-controls .btn-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: none;
+    border-radius: var(--radius);
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    padding: 10px 18px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .btn:active { transform: scale(0.96); }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #08090c;
+    box-shadow: 0 0 20px rgba(0,229,255,0.25);
+  }
+
+  .btn-primary:hover { background: #33eaff; }
+
+  .btn-danger {
+    background: var(--danger);
+    color: #fff;
+  }
+
+  .btn-ghost {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+
+  .btn-success {
+    background: var(--success);
+    color: #08090c;
+    flex: 1;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 600;
+    box-shadow: 0 0 24px rgba(0,230,118,0.25);
+  }
+
+  .btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  #shutter-btn {
+    width: 62px; height: 62px;
+    border-radius: 50%;
+    padding: 0;
+    position: relative;
+    background: transparent;
+    border: 3px solid var(--accent);
+    box-shadow: 0 0 20px rgba(0,229,255,0.3), inset 0 0 20px rgba(0,229,255,0.1);
+  }
+
+  #shutter-btn::after {
+    content: '';
+    position: absolute;
+    inset: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    transition: all 0.15s;
+  }
+
+  #shutter-btn.recording::after {
+    border-radius: 6px;
+    inset: 14px;
+    background: var(--danger);
+  }
+
+  #shutter-btn.recording {
+    border-color: var(--danger);
+    box-shadow: 0 0 20px rgba(255,23,68,0.35);
+  }
+
+  /* File upload area */
+  #upload-area {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 10px;
+  }
+
+  #upload-area:hover, #upload-area.drag-over {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(0,229,255,0.04);
+  }
+
+  /* Progress bar */
+  #progress-container {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  #progress-container.visible { display: flex; }
+
+  #progress-bar-wrap {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  #progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    border-radius: 2px;
+    transition: width 0.4s ease;
+    width: 0%;
+  }
+
+  #progress-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* ── VIEWER panel ──────────────────────────────────────────── */
+  #viewer-panel {
+    background: var(--bg);
+  }
+
+  #three-canvas {
+    flex: 1;
+    display: block;
+    width: 100%;
+    cursor: grab;
+  }
+
+  #three-canvas:active { cursor: grabbing; }
+
+  #viewer-overlay {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  #stats-bar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .stat-pill {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--accent);
+    background: rgba(8,9,12,0.8);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 8px;
+    backdrop-filter: blur(8px);
+  }
+
+  #legend {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--text);
+    background: rgba(8,9,12,0.75);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 7px;
+    backdrop-filter: blur(6px);
+  }
+
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+
+  #viewer-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 12px 16px 20px;
+    background: linear-gradient(transparent, rgba(8,9,12,0.95));
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  #empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--muted);
+    text-align: center;
+    padding: 40px 20px;
+  }
+
+  .empty-icon {
+    font-size: 48px;
+    opacity: 0.3;
+  }
+
+  #empty-state p { font-size: 13px; max-width: 220px; }
+
+  /* ── Loading ────────────────────────────────────────────────── */
+  #processing-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(8,9,12,0.92);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    z-index: 50;
+    backdrop-filter: blur(4px);
+  }
+
+  #processing-overlay.visible { display: flex; }
+
+  .spinner-ring {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #proc-stage {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  #proc-message {
+    font-size: 13px;
+    color: var(--muted);
+    text-align: center;
+    max-width: 260px;
+  }
+
+  /* ── Notification toast ─────────────────────────────────────── */
+  #toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 13px;
+    color: var(--text);
+    opacity: 0;
+    transition: all 0.3s;
+    z-index: 9999;
+    white-space: nowrap;
+    max-width: 90vw;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  #toast.success { border-color: var(--success); color: var(--success); }
+  #toast.error   { border-color: var(--danger); color: var(--danger); }
+
+  /* ── Mobile safe area ───────────────────────────────────────── */
+  @supports (padding-bottom: env(safe-area-inset-bottom)) {
+    #capture-controls, #viewer-controls {
+      padding-bottom: calc(24px + env(safe-area-inset-bottom));
+    }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Top bar -->
+  <div id="topbar">
+    <div class="logo">SCENE<span>.3D</span></div>
+    <div id="session-badge">NO SESSION</div>
+  </div>
+
+  <!-- Tabs -->
+  <div id="tabs">
+    <div class="tab active" data-panel="capture">📷 Capture</div>
+    <div class="tab" data-panel="viewer">🧊 3D Viewer</div>
+  </div>
+
+  <!-- ── CAPTURE PANEL ──────────────────────────────────────── -->
+  <div id="capture-panel" class="panel active">
+
+    <div id="video-wrapper">
+      <video id="camera-video" autoplay playsinline muted></video>
+      <div id="capture-overlay">
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+        <div id="frame-counter">0 frames</div>
+        <div id="rec-indicator"><div class="rec-dot"></div>REC</div>
+        <div id="motion-hint">Pan slowly around the scene</div>
+      </div>
+    </div>
+
+    <div id="capture-controls">
+      <!-- Main controls row -->
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="flip-btn" title="Flip camera">⟳</button>
+        <button id="shutter-btn" title="Start/Stop recording"></button>
+        <button class="btn btn-ghost" id="switch-btn" title="Upload video">⬆</button>
+      </div>
+
+      <!-- Progress bar (shown during processing) -->
+      <div id="progress-container">
+        <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+        <div id="progress-label">
+          <span id="prog-stage">Initializing...</span>
+          <span id="prog-pct">0%</span>
+        </div>
+      </div>
+
+      <!-- Reconstruct button (shown after enough frames) -->
+      <button id="reconstruct-btn" class="btn btn-success" disabled>
+        ⬡ Reconstruct 3D Scene
+      </button>
+
+      <!-- Upload fallback -->
+      <div id="upload-area" title="Click to upload a video file">
+        📁 or drop / click to upload a video file
+        <input type="file" id="file-input" accept="video/*" style="display:none">
+      </div>
+    </div>
+
+    <!-- Processing overlay -->
+    <div id="processing-overlay">
+      <div class="spinner-ring"></div>
+      <div id="proc-stage">INITIALIZING</div>
+      <div id="proc-message">Starting reconstruction pipeline…</div>
+    </div>
+
+  </div>
+
+  <!-- ── VIEWER PANEL ───────────────────────────────────────── -->
+  <div id="viewer-panel" class="panel">
+
+    <div id="empty-state">
+      <div class="empty-icon">🧊</div>
+      <p>Capture a scene and reconstruct it to see the 3D model here.</p>
+    </div>
+
+    <canvas id="three-canvas" style="display:none"></canvas>
+
+    <div id="viewer-overlay" style="display:none">
+      <div id="stats-bar">
+        <div class="stat-pill" id="stat-pts">— pts</div>
+        <div class="stat-pill" id="stat-mesh">no mesh</div>
+        <div class="stat-pill" id="stat-method">—</div>
+      </div>
+      <div id="legend"></div>
+    </div>
+
+    <div id="viewer-controls" style="display:none">
+      <button class="btn btn-ghost" id="reset-view-btn" style="flex:1">⟳ Reset View</button>
+      <button class="btn btn-ghost" id="toggle-mode-btn" style="flex:1">◉ Points</button>
+      <a id="download-ply" class="btn btn-ghost" style="flex:1; text-decoration:none; text-align:center">⬇ PLY</a>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// Config
+// ═══════════════════════════════════════════════════════════════
+const API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? `http://${window.location.hostname}:8000`
+  : `${window.location.protocol}//${window.location.hostname}:8000`;
+
+const CAPTURE_FPS = 2;       // frames per second to send
+const MIN_FRAMES  = 30;      // minimum before reconstruct enabled
+
+// ═══════════════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════════════
+let sessionId    = null;
+let ws           = null;
+let isRecording  = false;
+let captureTimer = null;
+let frameCount   = 0;
+let stream       = null;
+let facingMode   = 'environment';
+let serverReachable = false;
+
+// Three.js
+let scene, camera, renderer, pointCloud, meshObj, controls3d;
+let currentMode  = 'points'; // 'points' | 'mesh'
+let animFrameId  = null;
+
+// ═══════════════════════════════════════════════════════════════
+// Utilities
+// ═══════════════════════════════════════════════════════════════
+function toast(msg, type = '', duration = 3000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `show ${type}`;
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.className = '', duration);
+}
+
+function setProgress(pct, stage, msg) {
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('prog-stage').textContent = stage || '';
+  document.getElementById('prog-pct').textContent   = Math.round(pct) + '%';
+  const overlay = document.getElementById('processing-overlay');
+  if (pct > 0 && pct < 100) {
+    overlay.classList.add('visible');
+    document.getElementById('proc-stage').textContent   = (stage || '').toUpperCase();
+    document.getElementById('proc-message').textContent = msg || '';
+  } else if (pct >= 100) {
+    setTimeout(() => overlay.classList.remove('visible'), 800);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Tab switching
+// ═══════════════════════════════════════════════════════════════
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(tab.dataset.panel + '-panel').classList.add('active');
+    if (tab.dataset.panel === 'viewer' && renderer) {
+      resizeRenderer();
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Camera
+// ═══════════════════════════════════════════════════════════════
+async function startCamera() {
+  try {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    document.getElementById('camera-video').srcObject = stream;
+  } catch (e) {
+    toast('Camera access denied – use file upload instead', 'error');
+  }
+}
+
+document.getElementById('flip-btn').addEventListener('click', () => {
+  facingMode = facingMode === 'environment' ? 'user' : 'environment';
+  startCamera();
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Session management
+// ═══════════════════════════════════════════════════════════════
+async function initSession() {
+  try {
+    const r = await fetch(`${API}/sessions/new`, { method: 'POST' });
+    if (!r.ok) throw new Error('server error');
+    const d = await r.json();
+    sessionId = d.session_id;
+    document.getElementById('session-badge').textContent = `SID:${sessionId}`;
+    serverReachable = true;
+    connectWS();
+  } catch (e) {
+    serverReachable = false;
+    document.getElementById('session-badge').textContent = 'OFFLINE';
+    toast('⚠ Backend unreachable – demo mode', 'error', 5000);
+  }
+}
+
+function connectWS() {
+  if (!sessionId) return;
+  const wsUrl = API.replace('http', 'ws') + `/ws/${sessionId}`;
+  ws = new WebSocket(wsUrl);
+
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'ping') { ws.send(JSON.stringify({ type: 'pong' })); return; }
+    if (msg.type === 'status' || msg.type === 'complete') {
+      const pct = msg.progress || 0;
+      setProgress(pct, msg.stage, msg.message);
+      if (msg.type === 'complete') onReconstructionComplete(msg.results);
+    }
+    if (msg.type === 'error') {
+      toast('Error: ' + msg.message, 'error');
+      setProgress(0);
+      document.getElementById('processing-overlay').classList.remove('visible');
+    }
+  };
+
+  ws.onclose = () => { if (sessionId) setTimeout(connectWS, 3000); };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Capture loop
+// ═══════════════════════════════════════════════════════════════
+const shutterBtn     = document.getElementById('shutter-btn');
+const recIndicator   = document.getElementById('rec-indicator');
+const frameCounter   = document.getElementById('frame-counter');
+const reconstructBtn = document.getElementById('reconstruct-btn');
+
+shutterBtn.addEventListener('click', () => {
+  if (isRecording) stopCapture();
+  else startCapture();
+});
+
+function startCapture() {
+  if (!stream) { toast('No camera stream', 'error'); return; }
+  isRecording = true;
+  shutterBtn.classList.add('recording');
+  recIndicator.classList.add('active');
+
+  captureTimer = setInterval(() => sendFrame(), 1000 / CAPTURE_FPS);
+}
+
+function stopCapture() {
+  isRecording = false;
+  clearInterval(captureTimer);
+  shutterBtn.classList.remove('recording');
+  recIndicator.classList.remove('active');
+  toast(`Captured ${frameCount} frames`, 'success');
+}
+
+async function sendFrame() {
+  const video = document.getElementById('camera-video');
+  if (!video.videoWidth) return;
+
+  const canvas = document.createElement('canvas');
+  const scale  = Math.min(1, 1280 / video.videoWidth);
+  canvas.width  = Math.round(video.videoWidth  * scale);
+  canvas.height = Math.round(video.videoHeight * scale);
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  frameCount++;
+  frameCounter.textContent = `${frameCount} frames`;
+  if (frameCount >= MIN_FRAMES) reconstructBtn.disabled = false;
+
+  if (!serverReachable || !sessionId) return; // offline mode
+
+  canvas.toBlob(async blob => {
+    try {
+      const fd = new FormData();
+      fd.append('frame', blob, 'frame.jpg');
+      await fetch(`${API}/sessions/${sessionId}/frames`, { method: 'POST', body: fd });
+    } catch (e) { /* swallow – network blip */ }
+  }, 'image/jpeg', 0.85);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// File upload fallback
+// ═══════════════════════════════════════════════════════════════
+const uploadArea = document.getElementById('upload-area');
+const fileInput  = document.getElementById('file-input');
+
+uploadArea.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => handleVideoFile(fileInput.files[0]));
+
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+uploadArea.addEventListener('dragleave', ()  => uploadArea.classList.remove('drag-over'));
+uploadArea.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadArea.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('video/')) handleVideoFile(f);
+});
+
+async function handleVideoFile(file) {
+  if (!file) return;
+  toast(`Uploading ${file.name}…`);
+
+  if (!serverReachable || !sessionId) {
+    toast('Backend offline – cannot process video', 'error');
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('video', file);
+  try {
+    const r = await fetch(`${API}/sessions/${sessionId}/upload-video`, { method: 'POST', body: fd });
+    const d = await r.json();
+    frameCount = d.frames_extracted || 0;
+    document.getElementById('frame-counter').textContent = `${frameCount} frames`;
+    if (frameCount >= MIN_FRAMES) reconstructBtn.disabled = false;
+    toast(`Extracted ${frameCount} frames`, 'success');
+  } catch (e) {
+    toast('Upload failed: ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Trigger reconstruction
+// ═══════════════════════════════════════════════════════════════
+reconstructBtn.addEventListener('click', async () => {
+  if (isRecording) stopCapture();
+
+  if (!serverReachable || !sessionId) {
+    // Demo mode: load bundled example data
+    loadDemoCloud();
+    return;
+  }
+
+  document.getElementById('progress-container').classList.add('visible');
+  setProgress(5, 'queued', 'Queuing reconstruction job…');
+
+  try {
+    const r = await fetch(`${API}/sessions/${sessionId}/reconstruct`, { method: 'POST' });
+    const d = await r.json();
+    if (d.error) { toast(d.error, 'error'); return; }
+    toast('Reconstruction started!');
+  } catch (e) {
+    toast('Failed to start: ' + e.message, 'error');
+    setProgress(0);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Handle completion
+// ═══════════════════════════════════════════════════════════════
+async function onReconstructionComplete(results) {
+  toast(`Done! ${results.num_points.toLocaleString()} points`, 'success', 4000);
+  setProgress(100, 'complete', 'Reconstruction complete');
+
+  // Switch to viewer
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('[data-panel="viewer"]').classList.add('active');
+  document.getElementById('viewer-panel').classList.add('active');
+
+  // Update download link
+  if (results.files?.pointcloud_ply) {
+    document.getElementById('download-ply').href = API + results.files.pointcloud_ply;
+  }
+
+  // Load point cloud
+  try {
+    const r = await fetch(API + results.files.pointcloud_json);
+    const data = await r.json();
+    initThreeScene(data, results);
+  } catch (e) {
+    toast('Viewer error: ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Demo mode (no backend)
+// ═══════════════════════════════════════════════════════════════
+function loadDemoCloud() {
+  toast('Backend offline – showing demo scene', '', 4000);
+
+  // Generate a synthetic indoor room point cloud
+  const pts    = [];
+  const colors = [];
+  const labels = {};
+
+  const rng = (a, b) => a + Math.random() * (b - a);
+
+  // Floor (y ~ 0)
+  for (let i = 0; i < 2000; i++) {
+    const x = rng(-3, 3), z = rng(-3, 3);
+    pts.push([x, rng(-0.05, 0.05), z]);
+    colors.push([0.45, 0.38, 0.3]);
+    labels[pts.length - 1] = 'floor';
+  }
+  // Ceiling (y ~ 2.5)
+  for (let i = 0; i < 1500; i++) {
+    pts.push([rng(-3, 3), rng(2.45, 2.55), rng(-3, 3)]);
+    colors.push([0.92, 0.92, 0.88]);
+    labels[pts.length - 1] = 'ceiling';
+  }
+  // Walls
+  const wallSegs = [
+    [[-3,0,-3],[-3,2.5,-3],[-3,0,3],[-3,2.5,3],'wall'],
+    [[3,0,-3],[3,2.5,-3],[3,0,3],[3,2.5,3],'wall'],
+    [[-3,0,-3],[3,0,-3],[-3,2.5,-3],[3,2.5,-3],'wall'],
+    [[-3,0,3],[3,0,3],[-3,2.5,3],[3,2.5,3],'wall'],
+  ];
+  for (const [,,,, lbl] of wallSegs) {
+    for (let i = 0; i < 400; i++) {
+      const t = Math.random(), u = Math.random();
+      let x, y, z;
+      if (lbl === 'wall') {
+        // random wall
+        const side = Math.floor(Math.random() * 4);
+        if (side === 0)      { x = -3; y = rng(0, 2.5); z = rng(-3, 3); }
+        else if (side === 1) { x =  3; y = rng(0, 2.5); z = rng(-3, 3); }
+        else if (side === 2) { z = -3; x = rng(-3, 3); y = rng(0, 2.5); }
+        else                 { z =  3; x = rng(-3, 3); y = rng(0, 2.5); }
+      }
+      pts.push([x, y, z]);
+      colors.push([0.72, 0.72, 0.70]);
+      labels[pts.length - 1] = 'wall';
+    }
+  }
+  // Furniture: table + chairs
+  for (let i = 0; i < 600; i++) {
+    pts.push([rng(-0.8, 0.8), rng(0.7, 0.75), rng(-0.6, 0.6)]);
+    colors.push([0.55, 0.38, 0.22]);
+    labels[pts.length - 1] = 'furniture';
+  }
+  for (let i = 0; i < 300; i++) {
+    const cx = [-1.2, 1.2][i < 150 ? 0 : 1];
+    pts.push([cx + rng(-0.25, 0.25), rng(0, 0.45), rng(-0.25, 0.25)]);
+    colors.push([0.4, 0.28, 0.18]);
+    labels[pts.length - 1] = 'furniture';
+  }
+
+  const data = {
+    points: pts,
+    colors,
+    labels: Object.fromEntries(Object.entries(labels).map(([k,v]) => [k,v])),
+    stats: { num_points: pts.length, bounds: { min: [-3,-0.1,-3], max: [3,2.6,3] } }
+  };
+
+  const results = {
+    num_points: pts.length,
+    has_mesh: false,
+    used_colmap: false,
+    labels: { floor: 2000, ceiling: 1500, wall: 1600, furniture: 900 }
+  };
+
+  // Switch to viewer
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('[data-panel="viewer"]').classList.add('active');
+  document.getElementById('viewer-panel').classList.add('active');
+
+  initThreeScene(data, results);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Three.js viewer
+// ═══════════════════════════════════════════════════════════════
+function initThreeScene(data, results) {
+  const canvas = document.getElementById('three-canvas');
+  const empty  = document.getElementById('empty-state');
+  empty.style.display = 'none';
+  canvas.style.display = 'block';
+  document.getElementById('viewer-overlay').style.display = 'flex';
+  document.getElementById('viewer-controls').style.display = 'flex';
+
+  if (renderer) {
+    renderer.dispose();
+    if (animFrameId) cancelAnimationFrame(animFrameId);
+  }
+
+  scene    = new THREE.Scene();
+  scene.background = new THREE.Color(0x08090c);
+
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  camera   = new THREE.PerspectiveCamera(55, W / H, 0.01, 100);
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(W, H);
+
+  // Lights
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+  dir.position.set(1, 2, 1);
+  scene.add(dir);
+
+  // Grid
+  const grid = new THREE.GridHelper(10, 20, 0x1a1d25, 0x1a1d25);
+  scene.add(grid);
+
+  // Point cloud
+  const pts    = data.points;
+  const clrs   = data.colors;
+  const n      = pts.length;
+  const posArr = new Float32Array(n * 3);
+  const clrArr = new Float32Array(n * 3);
+
+  let cx = 0, cy = 0, cz = 0;
+  for (let i = 0; i < n; i++) {
+    posArr[i*3]   = pts[i][0]; cx += pts[i][0];
+    posArr[i*3+1] = pts[i][1]; cy += pts[i][1];
+    posArr[i*3+2] = pts[i][2]; cz += pts[i][2];
+    clrArr[i*3]   = clrs[i] ? clrs[i][0] : 0.5;
+    clrArr[i*3+1] = clrs[i] ? clrs[i][1] : 0.5;
+    clrArr[i*3+2] = clrs[i] ? clrs[i][2] : 0.5;
+  }
+  cx /= n; cy /= n; cz /= n;
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(clrArr, 3));
+
+  const mat = new THREE.PointsMaterial({ size: 0.025, vertexColors: true, sizeAttenuation: true });
+  pointCloud = new THREE.Points(geo, mat);
+  scene.add(pointCloud);
+
+  // Center camera on cloud
+  camera.position.set(cx + 4, cy + 3, cz + 4);
+  camera.lookAt(cx, cy, cz);
+
+  // Orbit controls (manual implementation – no import needed)
+  controls3d = makeOrbitControls(camera, canvas, cx, cy, cz);
+
+  // Stats
+  document.getElementById('stat-pts').textContent    = `${n.toLocaleString()} pts`;
+  document.getElementById('stat-mesh').textContent   = results.has_mesh ? '✓ mesh' : 'no mesh';
+  document.getElementById('stat-method').textContent = results.used_colmap ? 'COLMAP' : 'ORB-SfM';
+
+  // Legend
+  buildLegend(results.labels || {});
+
+  // UI
+  document.getElementById('reset-view-btn').onclick = () => {
+    camera.position.set(cx + 4, cy + 3, cz + 4);
+    camera.lookAt(cx, cy, cz);
+    controls3d.target.set(cx, cy, cz);
+  };
+
+  document.getElementById('toggle-mode-btn').onclick = () => {
+    currentMode = currentMode === 'points' ? 'wireframe' : 'points';
+    document.getElementById('toggle-mode-btn').textContent =
+      currentMode === 'points' ? '◉ Points' : '⬡ Wireframe';
+    if (pointCloud) pointCloud.visible = currentMode === 'points';
+  };
+
+  // Animate
+  function animate() {
+    animFrameId = requestAnimationFrame(animate);
+    controls3d.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  window.addEventListener('resize', resizeRenderer);
+}
+
+function resizeRenderer() {
+  if (!renderer) return;
+  const canvas = document.getElementById('three-canvas');
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  camera.aspect = W / H;
+  camera.updateProjectionMatrix();
+  renderer.setSize(W, H);
+}
+
+function buildLegend(labelCounts) {
+  const colorMap = {
+    floor:     '#7a6550',
+    wall:      '#b8b8b5',
+    ceiling:   '#eaeae0',
+    furniture: '#8c6038',
+    object:    '#4a7aad',
+  };
+  const el = document.getElementById('legend');
+  el.innerHTML = '';
+  for (const [lbl, count] of Object.entries(labelCounts)) {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML = `<div class="legend-dot" style="background:${colorMap[lbl]||'#888'}"></div>${lbl} (${count})`;
+    el.appendChild(item);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Minimal orbit controls (touch + mouse)
+// ═══════════════════════════════════════════════════════════════
+function makeOrbitControls(camera, canvas, tx, ty, tz) {
+  const state = {
+    target: new THREE.Vector3(tx, ty, tz),
+    isDragging: false,
+    prevX: 0, prevY: 0,
+    spherical: { theta: Math.PI / 4, phi: Math.PI / 3, r: 7 },
+    touches: {},
+    prevDist: 0,
+  };
+
+  function toCartesian() {
+    const { theta, phi, r } = state.spherical;
+    camera.position.set(
+      state.target.x + r * Math.sin(phi) * Math.sin(theta),
+      state.target.y + r * Math.cos(phi),
+      state.target.z + r * Math.sin(phi) * Math.cos(theta)
+    );
+    camera.lookAt(state.target);
+  }
+
+  // Mouse
+  canvas.addEventListener('mousedown', e => { state.isDragging = true; state.prevX = e.clientX; state.prevY = e.clientY; });
+  canvas.addEventListener('mouseup',   () => state.isDragging = false);
+  canvas.addEventListener('mousemove', e => {
+    if (!state.isDragging) return;
+    const dx = e.clientX - state.prevX, dy = e.clientY - state.prevY;
+    state.spherical.theta -= dx * 0.005;
+    state.spherical.phi    = Math.max(0.1, Math.min(Math.PI - 0.1, state.spherical.phi + dy * 0.005));
+    state.prevX = e.clientX; state.prevY = e.clientY;
+  });
+  canvas.addEventListener('wheel', e => {
+    state.spherical.r = Math.max(0.5, Math.min(30, state.spherical.r + e.deltaY * 0.01));
+    e.preventDefault();
+  }, { passive: false });
+
+  // Touch
+  canvas.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      state.isDragging = true;
+      state.prevX = e.touches[0].clientX;
+      state.prevY = e.touches[0].clientY;
+    } else if (e.touches.length === 2) {
+      state.isDragging = false;
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      state.prevDist = Math.sqrt(dx*dx + dy*dy);
+    }
+    e.preventDefault();
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', e => {
+    if (e.touches.length === 1 && state.isDragging) {
+      const dx = e.touches[0].clientX - state.prevX;
+      const dy = e.touches[0].clientY - state.prevY;
+      state.spherical.theta -= dx * 0.005;
+      state.spherical.phi    = Math.max(0.1, Math.min(Math.PI - 0.1, state.spherical.phi + dy * 0.005));
+      state.prevX = e.touches[0].clientX;
+      state.prevY = e.touches[0].clientY;
+    } else if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      state.spherical.r = Math.max(0.5, Math.min(30, state.spherical.r * (state.prevDist / dist)));
+      state.prevDist = dist;
+    }
+    e.preventDefault();
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', () => state.isDragging = false);
+
+  return {
+    target: state.target,
+    update() { toCartesian(); }
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════════════════════════
+startCamera();
+initSession();
+</script>
+</body>
+</html>

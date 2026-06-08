@@ -1,7 +1,5 @@
-# Digital-3D-World-Creator
+# Digital-3D-World-Creator — Real-Time Video to 3D Reconstruction
 Using your phone camera to capture the reality then the 3D representation will be created in the digital world in real time. 
-
-# SCENE.3D — Real-Time Video to 3D Reconstruction
 
 > Point your phone at a room. Walk around it. Watch it become a 3D model.
 
@@ -37,6 +35,17 @@ Phone camera  →  Frame extraction  →  Feature matching  →  3D triangulatio
 | 🔌 Offline demo | Works without backend to show example scene |
 
 ---
+## folder structure
+Digital-3D-World-Creator/
+├── backend/
+│   ├── main.py          
+│   ├── requirements.txt
+│   └── Dockerfile
+├── frontend/
+│   └── index.html       
+├── start.ps1            ← Windows start script
+├── start.sh             ← Mac/Linux start script
+└── docker-compose.yml
 
 ## Requirements
 
@@ -54,16 +63,16 @@ fastapi  uvicorn  opencv-python-headless  open3d  numpy  scipy
 
 ### Option A — One command (Mac / Linux)
 ```bash
-git clone https://github.com/YOUR_USERNAME/scene-3d.git
-cd scene-3d
+git clone https://github.com/KK2082/Digital-3D-World-Creator.git
+cd Digital-3D-World-Creator
 chmod +x start.sh
 ./start.sh
 ```
 
 ### Option B — Windows PowerShell
 ```powershell
-git clone https://github.com/YOUR_USERNAME/scene-3d.git
-cd scene-3d
+git clone https://github.com/KK2082/Digital-3D-World-Creator.git
+cd Digital-3D-World-Creator
 .\start.ps1
 ```
 

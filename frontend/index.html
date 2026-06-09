@@ -1046,14 +1046,27 @@ function initThreeScene(data, results) {
 
   let cx = 0, cy = 0, cz = 0;
   for (let i = 0; i < n; i++) {
-    posArr[i*3]   = pts[i][0]; cx += pts[i][0];
-    posArr[i*3+1] = pts[i][1]; cy += pts[i][1];
-    posArr[i*3+2] = pts[i][2]; cz += pts[i][2];
-    clrArr[i*3]   = clrs[i] ? clrs[i][0] : 0.5;
-    clrArr[i*3+1] = clrs[i] ? clrs[i][1] : 0.5;
-    clrArr[i*3+2] = clrs[i] ? clrs[i][2] : 0.5;
+      cx += pts[i][0];
+      cy += pts[i][1];
+      cz += pts[i][2];
   }
   cx /= n; cy /= n; cz /= n;
+
+  // Find y min to align floor to grid
+  let yMin = Infinity;
+  for (let i = 0; i < n; i++) yMin = Math.min(yMin, pts[i][1]);
+
+  for (let i = 0; i < n; i++) {
+      posArr[i*3]   = pts[i][0] - cx;
+      posArr[i*3+1] = pts[i][1] - yMin;
+      posArr[i*3+2] = pts[i][2] - cz;
+      clrArr[i*3]   = clrs[i] ? clrs[i][0] : 0.5;
+      clrArr[i*3+1] = clrs[i] ? clrs[i][1] : 0.5;
+      clrArr[i*3+2] = clrs[i] ? clrs[i][2] : 0.5;
+  }
+
+  // Reset centre after shifting
+  cx = 0; cy = (cy - yMin) / 2; cz = 0;
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));

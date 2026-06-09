@@ -106,11 +106,64 @@ Then open **http://localhost:3000** in your browser.
 
 ---
 
+## Verifying the system is online
+
+Before recording or uploading, confirm both services are running:
+
+**1. Check the backend is up** — open this in your browser:
+```
+http://localhost:8000/docs
+```
+You should see a FastAPI documentation page. If it doesn't load, the backend isn't running.
+
+**2. Check the frontend is connected** — open `http://localhost:3000` and look at the top bar:
+- Shows `SID:xxxxxxxx` → connected and ready
+- Shows `OFFLINE` → backend not reachable, check uvicorn is running
+
+**3. Check reconstruction status** — while processing, open this in a new tab and keep refreshing:
+```
+http://localhost:8000/sessions/YOUR_SESSION_ID/status
+```
+Replace `YOUR_SESSION_ID` with the ID shown in the top bar (e.g. `SID:a3f7b2` → use `a3f7b2`). It returns JSON showing the current stage and progress:
+```json
+{"stage": "triangulation", "progress": 45, "message": "Triangulated 1200 pts"}
+```
+
+---
+
+## Installing COLMAP (recommended for better results)
+
+COLMAP significantly improves reconstruction quality. Without it the system falls back to a basic ORB-based method.
+
+**Download:** https://github.com/colmap/colmap/releases
+- Choose `COLMAP-x.x-windows-cuda.zip` if you have a dedicated GPU
+- Choose `COLMAP-x.x-windows-no-cuda.zip` for CPU only
+
+**Install:**
+1. Extract the zip to `C:\colmap\`
+2. Verify it works — open a terminal and run:
+   ```cmd
+   C:\colmap\COLMAP.bat --version
+   ```
+
+**Start the backend with COLMAP in PATH:**
+```cmd
+set PATH=%PATH%;C:\colmap
+cd backend
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+COLMAP will be used automatically when available. Confirm it's working by checking `"used_colmap": true` in the session status URL after reconstruction.
+
+> **Note for COLMAP 4.x on Windows:** The `--SiftExtraction.use_gpu` flag was removed in COLMAP 4.x. The backend handles this automatically — GPU is used by default when available.
+
+---
+
 ## Using on your phone
 
 The easiest and most reliable method is to **record a video and upload it**:
 
-1. Record a slow 30–60 second video on your phone panning around the room
+1. Record a video on your phone following the guidelines below
 2. Send it to your laptop (WhatsApp, Google Drive, email, USB)
 3. Open `http://localhost:3000` on your laptop
 4. Click the **upload area** at the bottom and select your video
@@ -129,12 +182,47 @@ If you want to use your phone as a live camera:
    ```
    Then open the `https://` URL ngrok provides on your phone
 
-### Tips for best results
-- Move **slowly and steadily** — fast motion = blurry frames = fewer matches
-- Ensure **good lighting** — reconstruction needs visible texture
-- Aim for **30–120 frames** (15–60 seconds of slow panning)
-- Overlap adjacent views by ~60% for robust feature matching
-- Avoid **featureless surfaces** (plain white walls) — add some objects for texture
+---
+
+## Video recording guidelines
+
+The quality of the 3D reconstruction depends heavily on how the video is recorded. Follow these guidelines carefully.
+
+### Duration
+- **Minimum:** 30 seconds
+- **Recommended:** 60–90 seconds
+- **Maximum:** 3 minutes (longer videos slow down processing without much benefit)
+
+### Movement speed
+- Move **very slowly** — slower than feels natural
+- A full room orbit should take at least 45–60 seconds
+- Fast movement causes motion blur and breaks feature matching
+- Pause briefly at each corner to ensure good overlap
+
+### Camera angle
+- Keep the camera at **chest or shoulder height**
+- Hold it **horizontal** — avoid tilting up at the ceiling or down at the floor
+- Move the camera **smoothly** without jerking or rotating quickly
+- Walk in a **complete orbit** around the room, not just a pan from one spot
+
+### Lighting
+- **Bright, even lighting** is essential — turn on all lights in the room
+- Avoid filming into windows or bright light sources (causes overexposure)
+- Avoid dark corners — the reconstruction relies on visible texture
+- Natural daylight + room lights combined works best
+
+### Room selection
+- Choose a room with **lots of objects and texture** — bookshelves, furniture, posters
+- Avoid plain white or featureless walls — COLMAP can't find features on blank surfaces
+- Smaller rooms (bedroom, office) work better than large open spaces
+- The more visual detail in the scene, the denser the reconstruction
+
+### What to expect
+| Video quality | Expected result |
+|---|---|
+| Well-lit, textured room, slow movement | 3,000–10,000 points, recognisable room shape |
+| Average lighting, some texture | 500–3,000 points, rough geometry |
+| Dark or featureless room, fast movement | < 500 points, poor geometry |
 
 ---
 
@@ -218,9 +306,17 @@ Poisson mesh: 8,442 triangles
 |---|---|
 | `open3d` install fails | Use Python 3.11 — `py -3.11 -m venv venv` |
 | Backend offline in browser | Run uvicorn from inside the `backend/` folder |
+| `http://localhost:8000/docs` doesn't load | Backend isn't running — start uvicorn first |
+| Session shows OFFLINE | Refresh the page after starting the backend |
 | Phone can't reach laptop | Use phone hotspot instead of university WiFi |
 | Camera blocked on phone | Use video upload instead, or use ngrok for https |
 | `.\start.ps1` not recognised | Run PowerShell from the project root folder |
+| COLMAP not detected | Start uvicorn with `set PATH=%PATH%;C:\colmap` first |
+| COLMAP fails on feature extraction | Update to COLMAP 4.x — old `--SiftExtraction.use_gpu` flag removed |
+| `used_colmap: false` after reconstruction | COLMAP found fewer than 50 points — improve video quality |
+| Reconstruction looks wrong / sparse | Follow video recording guidelines above |
+| Progress bar not showing | WebSocket dropped — check status URL manually |
+| `{"error":"Unknown session"}` | Backend restarted and lost session — refresh page and re-upload |
 
 ---
 

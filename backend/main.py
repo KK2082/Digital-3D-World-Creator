@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Video-to-3D Reconstruction API", version="1.0.0")
@@ -129,24 +129,42 @@ def run_colmap(frames, colmap_path):
         if not dst.exists():
             shutil.copy2(fp, dst)
 
+    # Find COLMAP executable
+    colmap_exe = (shutil.which("colmap") or 
+                  shutil.which("COLMAP") or 
+                  r"C:\colmap\COLMAP.bat")
+    
+    logger.info(f"Using COLMAP at: {colmap_exe}")
+
     def run(cmd):
-        r = subprocess.run(cmd, capture_output=True, text=True)
-        if r.returncode != 0:
-            logger.warning(f"COLMAP failed: {r.stderr[:200]}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"COLMAP FAILED: {' '.join(cmd[:2])}", flush=True)
+            print(f"STDERR: {result.stderr[:500]}", flush=True)
             return False
+        print(f"COLMAP OK: {' '.join(cmd[:2])}", flush=True)
         return True
 
-    if not run(["colmap","feature_extractor","--database_path",str(db_path),
-                "--image_path",str(img_dir),"--ImageReader.single_camera","1",
-                "--SiftExtraction.use_gpu","0","--SiftExtraction.max_num_features","4096"]):
+    if not run([colmap_exe, "feature_extractor",
+                "--database_path", str(db_path),
+                "--image_path", str(img_dir),
+                "--ImageReader.single_camera", "1",
+                "--SiftExtraction.max_num_features", "4096"]):
         return False
-    if not run(["colmap","sequential_matcher","--database_path",str(db_path),
-                "--SequentialMatching.overlap","10","--SiftMatching.use_gpu","0"]):
+
+    if not run([colmap_exe, "sequential_matcher",
+                "--database_path", str(db_path),
+                "--SequentialMatching.overlap", "10"]):
         return False
-    if not run(["colmap","mapper","--database_path",str(db_path),
-                "--image_path",str(img_dir),"--output_path",str(sparse_dir),
-                "--Mapper.min_num_matches","15","--Mapper.init_min_num_inliers","50"]):
+
+    if not run([colmap_exe, "mapper",
+                "--database_path", str(db_path),
+                "--image_path", str(img_dir),
+                "--output_path", str(sparse_dir),
+                "--Mapper.min_num_matches", "15",
+                "--Mapper.init_min_num_inliers", "50"]):
         return False
+
     return len(list(sparse_dir.iterdir())) > 0
 
 
@@ -298,6 +316,12 @@ def export_pointcloud_json(pcd, labels, path):
 async def run_reconstruction(sid):
     fd = frames_dir(sid); cd = colmap_dir(sid); od = outputs_dir(sid)
     frame_paths = [str(f) for f in sorted(fd.glob("*.jpg")) + sorted(fd.glob("*.png"))]
+    
+    import os
+    colmap_check = shutil.which("colmap") or shutil.which("COLMAP") or (r"C:\colmap\COLMAP.bat" if os.path.exists(r"C:\colmap\COLMAP.bat") else None)
+    logger.info(f"DEBUG frames: {len(frame_paths)}, colmap: {colmap_check}")
+    print(f"FRAMES: {len(frame_paths)}, COLMAP: {colmap_check}", flush=True)
+    
     if len(frame_paths) < 5:
         await broadcast(sid, {"type":"error","message":"Not enough frames (need ≥ 5)"}); return
 
@@ -306,13 +330,19 @@ async def run_reconstruction(sid):
     await broadcast(sid, {"type":"status","stage":"dedup","progress":20,"message":f"Using {len(frame_paths)} unique frames"})
 
     pcd = None; used_colmap = False
-    if shutil.which("colmap") and len(frame_paths) >= 10:
+    colmap_exe = shutil.which("colmap") or shutil.which("COLMAP") or (r"C:\colmap\COLMAP.bat" if os.path.exists(r"C:\colmap\COLMAP.bat") else None)
+    logger.info(f"COLMAP found at: {colmap_exe}")
+    if colmap_exe and len(frame_paths) >= 10:
         await broadcast(sid, {"type":"status","stage":"sfm","progress":30,"message":"Running COLMAP SfM..."})
         try:
             ok = await asyncio.get_event_loop().run_in_executor(None, run_colmap, frame_paths, cd)
+            print(f"COLMAP result: {ok}", flush=True)
+        except Exception as e:
+            print(f"COLMAP exception: {e}", flush=True)
+            logger.warning(f"COLMAP error: {e}")
             if ok:
                 pcd = colmap_to_pointcloud(cd)
-                if pcd and len(pcd.points) > 50:
+                if pcd and len(pcd.points) > 10:
                     used_colmap = True
                     await broadcast(sid, {"type":"status","stage":"sfm","progress":55,"message":f"COLMAP: {len(pcd.points)} pts"})
         except Exception as e:
@@ -349,6 +379,8 @@ async def run_reconstruction(sid):
                      "pointcloud_ply":f"/sessions/{sid}/outputs/pointcloud.ply",
                      "mesh_obj":f"/sessions/{sid}/outputs/mesh.obj" if mesh else None}}})
     await broadcast(sid, {"type":"complete","session_id":sid,"results":sessions[sid]["results"]})
+
+    
 
 
 @app.post("/sessions/new")
